@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>9×9 Go — MCTS AI</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+  :root {
+    --wood:    #c8a96e;
+    --wood-dk: #a07840;
+    --line:    #5c3d11;
+    --ink:     #1a0f00;
+    --paper:   #f5ede0;
+    --black-s: #111111;
+    --white-s: #f0ede8;
+    --red:     #c0392b;
+    --accent:  #2c6e49;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1208;
+    font-family: 'Noto Serif JP', serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 32px 16px;
+    color: var(--paper);
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: .15em;
+    font-weight: 400;
+    color: var(--wood);
+    margin-bottom: 4px;
+    text-align: center;
+  }
+
+  .subtitle {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    color: #8a7060;
+    margin-bottom: 28px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+
+  .layout {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* ── Board ── */
+  .board-wrap {
+    position: relative;
+  }
+
+  canvas#board {
+    display: block;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 6px var(--wood-dk),
+      0 0 0 8px #3a2800,
+      0 20px 60px rgba(0,0,0,.6);
+    cursor: crosshair;
+  }
+
+  /* ── Side panel ── */
+  .panel {
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(200,169,110,.2);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .card h3 {
+    font-size: .7rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--wood);
+    margin-bottom: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .stone-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .stone-dot.black { background: var(--black-s); border: 1px solid #555; }
+  .stone-dot.white { background: var(--white-s); border: 1px solid #999; }
+
+  .score-label { font-size: .85rem; color: var(--paper); flex: 1; }
+  .score-val   { font-family: 'IBM Plex Mono', monospace; font-size: 1rem; color: var(--wood); font-weight: 600; }
+
+  #status-text {
+    font-size: .82rem;
+    line-height: 1.5;
+    color: #d4c9b8;
+    min-height: 40px;
+  }
+
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 9px 0;
+    border: 1px solid var(--wood-dk);
+    border-radius: 5px;
+    background: rgba(200,169,110,.1);
+    color: var(--paper);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .8rem;
+    letter-spacing: .1em;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .btn:hover { background: var(--wood-dk); color: var(--ink); }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  .btn.pass { border-color: #8a6030; }
+  .btn.resign { border-color: #7a2020; color: #e08080; }
+
+  /* AI strength slider */
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  input[type=range] {
+    flex: 1;
+    accent-color: var(--wood);
+  }
+  .slider-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .8rem;
+    color: var(--wood);
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* Move list */
+  #move-list {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .7rem;
+    color: #9a8878;
+    max-height: 120px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+
+  /* Win probability bar */
+  .prob-bar-wrap {
+    height: 8px;
+    background: rgba(255,255,255,.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  #prob-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--black-s) 0%, var(--black-s) var(--bpct), var(--white-s) var(--bpct), var(--white-s) 100%);
+    --bpct: 50%;
+    transition: --bpct .4s ease;
+    border-radius: 4px;
+  }
+  .prob-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .65rem;
+    color: #9a8878;
+    margin-top: 3px;
+  }
+  #black-prob, #white-prob { color: var(--paper); }
+
+  /* Result overlay */
+  #result-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    border-radius: 6px;
+    background: rgba(10,6,0,.75);
+    backdrop-filter: blur(4px);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  #result-overlay.show { display: flex; }
+  #result-msg {
+    font-size: 1.6rem;
+    color: var(--wood);
+    letter-spacing: .1em;
+  }
+  #result-score {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--paper);
+    font-size: .9rem;
+  }
+
+  .size-btn {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid var(--wood-dk);
+    border-radius: 4px;
+    background: rgba(200,169,110,.08);
+    color: #9a8878;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .75rem;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .size-btn:hover  { background: rgba(200,169,110,.2); color: var(--paper); }
+  .size-btn.active { background: var(--wood-dk); color: var(--ink); font-weight: 600; border-color: var(--wood); }
+
+  /* Dev panel */
+  #dev-panel {
+    width: 100%;
+    max-width: 720px;
+    margin-top: 24px;
+  }
+  #dev-toggle {
+    background: none;
+    border: 1px solid rgba(200,169,110,.2);
+    border-radius: 6px;
+    color: #8a7060;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    letter-spacing: .15em;
+    padding: 6px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: color .15s, border-color .15s;
+    display: block;
+    margin: 0 auto;
+  }
+  #dev-toggle:hover { color: var(--wood); border-color: var(--wood-dk); }
+
+  #dev-body {
+    display: none;
+    margin-top: 12px;
+    background: rgba(0,0,0,.4);
+    border: 1px solid rgba(200,169,110,.15);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #dev-body.open { display: block; }
+
+  .dev-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(200,169,110,.15);
+  }
+  .dev-tab {
+    padding: 8px 18px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #8a7060;
+    cursor: pointer;
+    border: none;
+    background: none;
+    transition: color .15s, background .15s;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .dev-tab.active { color: var(--wood); border-bottom-color: var(--wood); background: rgba(200,169,110,.05); }
+  .dev-tab:hover:not(.active) { color: var(--paper); }
+
+  .dev-section { display: none; padding: 16px 20px; }
+  .dev-section.active { display: block; }
+
+  /* Console log */
+  #dev-log {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    line-height: 1.7;
+    min-height: 120px;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-info  { color: #9ab8d4; }
+  .log-ok    { color: #6cbf8a; }
+  .log-warn  { color: #e0c060; }
+  .log-error { color: #e08080; }
+  .log-dim   { color: #6a5a4a; }
+
+  /* Benchmark */
+  .bench-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .bench-card {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(200,169,110,.12);
+    border-radius: 6px;
+    padding: 10px 14px;
+    text-align: center;
+  }
+  .bench-card .bval {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.3rem;
+    color: var(--wood);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .bench-card .blbl {
+    font-size: .65rem;
+    color: #8a7060;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-top: 3px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .bench-bar-wrap {
+    height: 6px; background: rgba(255,255,255,.08);
+    border-radius: 3px; overflow: hidden; margin-top: 4px;
+  }
+  .bench-bar { height: 100%; border-radius: 3px; width: 0%; transition: width .6s ease; }
+  .bench-bar.cpu { background: #5a9aba; }
+  .bench-bar.gpu { background: #6cbf8a; }
+
+  /* MCTS live stats */
+  .stat-row {
+    display: flex; justify-content: space-between;
+    align-items: center; padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    font-size: .78rem;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-key { color: #8a7060; font-family: 'IBM Plex Mono', monospace; font-size: .7rem; }
+  .stat-val { color: var(--paper); font-family: 'IBM Plex Mono', monospace; }
+  .stat-val.good { color: #6cbf8a; }
+  .stat-val.warn { color: #e0c060; }
+
+  /* Spinner */
+  .spinner {
+    display: none;
+    width: 18px; height: 18px;
+    border: 2px solid rgba(200,169,110,.3);
+    border-top-color: var(--wood);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    margin: 0 auto;
+  }
+  .spinner.show { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>囲碁 · Go</h1>
+<div class="subtitle">9×9 · MCTS AI · CUDA Ready</div>
+
+<div class="layout">
+
+  <!-- Board -->
+  <div class="board-wrap">
+    <canvas id="board" width="460" height="460"></canvas>
+    <div id="result-overlay">
+      <div id="result-msg">—</div>
+      <div id="result-score">—</div>
+      <button class="btn" onclick="newGame()" style="width:140px;margin-top:8px">New Game</button>
+    </div>
+  </div>
+
+  <!-- Panel -->
+  <div class="panel">
+
+    <div class="card">
+      <h3>Status</h3>
+      <div id="status-text">Waiting for Black…</div>
+      <div class="spinner" id="spinner"></div>
+    </div>
+
+    <div class="card">
+      <h3>Score</h3>
+      <div class="score-row">
+        <div class="stone-dot black"></div>
+        <div class="score-label">Black</div>
+        <div class="score-val" id="score-black">0</div>
+      </div>
+      <div class="score-row">
+        <div class="stone-dot white"></div>
+        <div class="score-label">White <small style="font-size:.65rem;color:#8a7060">(+6.5)</small></div>
+        <div class="score-val" id="score-white">6.5</div>
+      </div>
+      <div class="prob-bar-wrap"><div id="prob-bar"></div></div>
+      <div class="prob-labels">
+        <span>● <span id="black-prob">50%</span></span>
+        <span><span id="white-prob">50%</span> ○</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Board Size</h3>
+      <div style="display:flex;gap:6px;">
+        <button class="size-btn active" data-size="9"  onclick="setSize(9)">9×9</button>
+        <button class="size-btn"        data-size="13" onclick="setSize(13)">13×13</button>
+        <button class="size-btn"        data-size="19" onclick="setSize(19)">19×19</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>AI Strength</h3>
+      <div class="slider-row">
+        <input type="range" id="sims-slider" min="50" max="1000" step="50" value="400">
+        <div class="slider-val" id="sims-val">400</div>
+      </div>
+      <div style="font-size:.65rem;color:#8a7060;margin-top:4px;font-family:'IBM Plex Mono',monospace">simulations / move</div>
+    </div>
+
+    <div class="card">
+      <h3>Actions</h3>
+      <button class="btn pass" id="btn-pass" onclick="humanPass()">Pass</button>
+      <button class="btn resign" id="btn-resign" onclick="resign()" style="margin-top:8px">Resign</button>
+      <button class="btn" onclick="newGame()" style="margin-top:8px">New Game</button>
+    </div>
+
+    <div class="card">
+      <h3>Moves</h3>
+      <div id="move-list">—</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Dev Panel ── -->
+<div id="dev-panel">
+  <button id="dev-toggle" onclick="toggleDev()">⚙ Dev Panel</button>
+  <div id="dev-body">
+    <div class="dev-tabs">
+      <button class="dev-tab active" onclick="switchTab('cuda')">CUDA Diagnostics</button>
+      <button class="dev-tab" onclick="switchTab('bench')">Benchmark</button>
+      <button class="dev-tab" onclick="switchTab('mcts')">MCTS Stats</button>
+      <button class="dev-tab" onclick="switchTab('log')">Console</button>
+    </div>
+
+    <!-- CUDA Diagnostics -->
+    <div class="dev-section active" id="tab-cuda">
+      <div class="stat-row"><span class="stat-key">CUDA / CuPy Available</span><span class="stat-val" id="di-cuda">—</span></div>
+      <div class="stat-row"><span class="stat-key">WebGL GPU Renderer</span><span class="stat-val" id="di-gpu">—</span></div>
+      <div class="stat-row"><span class="stat-key">WebGL Version</span><span class="stat-val" id="di-wgl">—</span></div>
+      <div class="stat-row"><span class="stat-key">Hardware Concurrency</span><span class="stat-val" id="di-cores">—</span></div>
+      <div class="stat-row"><span class="stat-key">Device Memory</span><span class="stat-val" id="di-mem">—</span></div>
+      <div class="stat-row"><span class="stat-key">Rollout Backend</span><span class="stat-val" id="di-backend">—</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+        <button class="btn" style="width:auto;padding:7px 16px;" onclick="runDiagnostics()">↺ Refresh</button>
+        <button class="btn" style="width:auto;padding:7px 16px;" onclick="testRolloutSpeed()">⚡ Test Rollout Speed</button>
+      </div>
+      <div style="margin-top:12px;font-size:.7rem;color:#8a7060;font-family:'IBM Plex Mono',monospace;line-height:1.7;">
+        This UI runs in the browser (JS — no native CUDA).<br>
+        For real GPU verification: <span style="color:var(--wood)">python go_engine.py --cuda-test</span>
+      </div>
+    </div>
+
+    <!-- Benchmark -->
+    <div class="dev-section" id="tab-bench">
+      <div class="bench-grid">
+        <div class="bench-card">
+          <div class="bval" id="bench-sims">—</div>
+          <div class="blbl">Sims / second</div>
+          <div class="bench-bar-wrap"><div class="bench-bar cpu" id="bench-bar-sims"></div></div>
+        </div>
+        <div class="bench-card">
+          <div class="bval" id="bench-rollout">—</div>
+          <div class="blbl">Rollouts / sec</div>
+          <div class="bench-bar-wrap"><div class="bench-bar gpu" id="bench-bar-rollout"></div></div>
+        </div>
+        <div class="bench-card">
+          <div class="bval" id="bench-movegen">—</div>
+          <div class="blbl">Move gen / sec</div>
+          <div class="bench-bar-wrap"><div class="bench-bar cpu" id="bench-bar-movegen"></div></div>
+        </div>
+        <div class="bench-card">
+          <div class="bval" id="bench-score">—</div>
+          <div class="blbl">Scores / sec</div>
+          <div class="bench-bar-wrap"><div class="bench-bar gpu" id="bench-bar-score"></div></div>
+        </div>
+      </div>
+      <button class="btn" onclick="runBenchmark()" id="bench-btn">▶ Run Benchmark</button>
+      <div id="bench-status" style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:#8a7060;min-height:18px;"></div>
+    </div>
+
+    <!-- MCTS Stats -->
+    <div class="dev-section" id="tab-mcts">
+      <div class="stat-row"><span class="stat-key">Last Move Sims</span><span class="stat-val" id="ms-sims">—</span></div>
+      <div class="stat-row"><span class="stat-key">Time Taken</span><span class="stat-val" id="ms-time">—</span></div>
+      <div class="stat-row"><span class="stat-key">Sims / second</span><span class="stat-val" id="ms-rate">—</span></div>
+      <div class="stat-row"><span class="stat-key">Best Move Win %</span><span class="stat-val" id="ms-winpct">—</span></div>
+      <div class="stat-row"><span class="stat-key">Best Move Visits</span><span class="stat-val" id="ms-visits">—</span></div>
+      <div class="stat-row"><span class="stat-key">Tree Children</span><span class="stat-val" id="ms-nodes">—</span></div>
+      <div class="stat-row"><span class="stat-key">Avg Rollout Depth</span><span class="stat-val" id="ms-depth">—</span></div>
+      <div style="margin-top:12px;font-size:.7rem;color:#8a7060;font-family:'IBM Plex Mono',monospace;">
+        Updates automatically after each AI move.
+      </div>
+    </div>
+
+    <!-- Console -->
+    <div class="dev-section" id="tab-log">
+      <div id="dev-log"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" style="width:auto;padding:6px 14px;font-size:.72rem;" onclick="clearLog()">Clear</button>
+        <button class="btn" style="width:auto;padding:6px 14px;font-size:.72rem;" onclick="devLog('Manual test ✓','ok')">Test</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  Go Engine (JS port of go_engine.py for browser play)
+// ══════════════════════════════════════════════════════
+
+let SIZE   = 9;
+const EMPTY  = 0, BLACK = 1, WHITE = 2;
+const KOMI   = 6.5;
+const COL_LABELS = "ABCDEFGHJ";
+
+// ── Board ─────────────────────────────────────────────
+
+class GoBoard {
+  constructor() {
+    this.board = Array.from({length: SIZE}, () => new Int8Array(SIZE));
+    this.koPoint = null;
+    this.captured = {[BLACK]: 0, [WHITE]: 0};
+    this.moveHistory = [];
+    this.consecutivePasses = 0;
+  }
+
+  neighbours(r, c) {
+    const res = [];
+    for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nr=r+dr, nc=c+dc;
+      if (nr>=0 && nr<SIZE && nc>=0 && nc<SIZE) res.push([nr,nc]);
+    }
+    return res;
+  }
+
+  getGroup(r, c) {
+    const color = this.board[r][c];
+    if (!color) return new Set();
+    const group = new Set(), stack = [[r,c]];
+    while (stack.length) {
+      const [pr,pc] = stack.pop();
+      const key = pr*SIZE+pc;
+      if (group.has(key)) continue;
+      group.add(key);
+      for (const [nr,nc] of this.neighbours(pr,pc)) {
+        if (this.board[nr][nc] === color && !group.has(nr*SIZE+nc))
+          stack.push([nr,nc]);
+      }
+    }
+    return group;
+  }
+
+  getLiberties(group) {
+    const libs = new Set();
+    for (const key of group) {
+      const r=Math.floor(key/SIZE), c=key%SIZE;
+      for (const [nr,nc] of this.neighbours(r,c)) {
+        if (this.board[nr][nc] === EMPTY) libs.add(nr*SIZE+nc);
+      }
+    }
+    return libs;
+  }
+
+  isValidMove(r, c, color) {
+    if (this.board[r][c] !== EMPTY) return false;
+    if (this.koPoint && this.koPoint[0]===r && this.koPoint[1]===c) return false;
+    const opponent = color===BLACK ? WHITE : BLACK;
+    this.board[r][c] = color;
+    const captured = [];
+    for (const [nr,nc] of this.neighbours(r,c)) {
+      if (this.board[nr][nc] === opponent) {
+        const grp = this.getGroup(nr,nc);
+        if (!this.getLiberties(grp).size) {
+          for (const k of grp) captured.push([Math.floor(k/SIZE), k%SIZE]);
+        }
+      }
+    }
+    for (const [pr,pc] of captured) this.board[pr][pc] = EMPTY;
+    const ok = this.getLiberties(this.getGroup(r,c)).size > 0;
+    this.board[r][c] = EMPTY;
+    for (const [pr,pc] of captured) this.board[pr][pc] = opponent;
+    return ok;
+  }
+
+  applyMove(r, c, color) {
+    const opponent = color===BLACK ? WHITE : BLACK;
+    this.board[r][c] = color;
+    this.koPoint = null;
+    let nCap = 0;
+    for (const [nr,nc] of this.neighbours(r,c)) {
+      if (this.board[nr][nc] === opponent) {
+        const grp = this.getGroup(nr,nc);
+        if (!this.getLiberties(grp).size) {
+          nCap += grp.size;
+          for (const k of grp) this.board[Math.floor(k/SIZE)][k%SIZE] = EMPTY;
+          if (grp.size === 1 && nCap === 1) {
+            const [pk] = grp;
+            const pr=Math.floor(pk/SIZE), pc=pk%SIZE;
+            if (this.getLiberties(this.getGroup(r,c)).size === 1)
+              this.koPoint = [pr,pc];
+          }
+        }
+      }
+    }
+    this.captured[color] += nCap;
+    this.moveHistory.push([r,c]);
+    this.consecutivePasses = 0;
+  }
+
+  passMove() {
+    this.moveHistory.push(null);
+    this.consecutivePasses++;
+    this.koPoint = null;
+  }
+
+  legalMoves(color) {
+    const moves = [];
+    for (let r=0; r<SIZE; r++)
+      for (let c=0; c<SIZE; c++)
+        if (this.isValidMove(r,c,color)) moves.push([r,c]);
+    return moves;
+  }
+
+  score() {
+    const visited = Array.from({length:SIZE}, () => new Uint8Array(SIZE));
+    let bs=0, ws=0;
+    for (let r=0; r<SIZE; r++) {
+      for (let c=0; c<SIZE; c++) {
+        if (visited[r][c]) continue;
+        if (this.board[r][c] !== EMPTY) { visited[r][c]=1; continue; }
+        const region=[], borders=new Set(), stack=[[r,c]];
+        while (stack.length) {
+          const [pr,pc] = stack.pop();
+          if (visited[pr][pc]) continue;
+          visited[pr][pc]=1; region.push([pr,pc]);
+          for (const [nr,nc] of this.neighbours(pr,pc)) {
+            if (this.board[nr][nc]===EMPTY && !visited[nr][nc]) stack.push([nr,nc]);
+            else if (this.board[nr][nc]) borders.add(this.board[nr][nc]);
+          }
+        }
+        if (borders.size===1) {
+          const owner = [...borders][0];
+          if (owner===BLACK) bs+=region.length; else ws+=region.length;
+        }
+      }
+    }
+    for (let r=0; r<SIZE; r++)
+      for (let c=0; c<SIZE; c++) {
+        if (this.board[r][c]===BLACK) bs++;
+        else if (this.board[r][c]===WHITE) ws++;
+      }
+    return [bs, ws+KOMI];
+  }
+
+  isGameOver() { return this.consecutivePasses >= 2; }
+
+  clone() {
+    const b = new GoBoard();
+    b.board = this.board.map(row => new Int8Array(row));
+    b.koPoint = this.koPoint ? [...this.koPoint] : null;
+    b.captured = {...this.captured};
+    b.moveHistory = [...this.moveHistory];
+    b.consecutivePasses = this.consecutivePasses;
+    return b;
+  }
+}
+
+// ── MCTS ──────────────────────────────────────────────
+
+class MCTSNode {
+  constructor(board, color, parent=null, move=null) {
+    this.board = board; this.color = color;
+    this.parent = parent; this.move = move;
+    this.children = []; this.wins = 0; this.visits = 0;
+    this.untried = [...board.legalMoves(color), null];
+  }
+  get ucb1() {
+    if (!this.visits) return Infinity;
+    return this.wins/this.visits +
+      Math.sqrt(2*Math.log(this.parent.visits)/this.visits);
+  }
+  bestChild() { return this.children.reduce((a,b) => b.ucb1>a.ucb1?b:a); }
+  isFullyExpanded() { return this.untried.length === 0; }
+  isTerminal() { return this.board.isGameOver(); }
+}
+
+function mcts(board, color, simulations) {
+  const root = new MCTSNode(board.clone(), color);
+  for (let i=0; i<simulations; i++) {
+    // Select
+    let node = root;
+    while (!node.isTerminal() && node.isFullyExpanded()) node = node.bestChild();
+    // Expand
+    if (!node.isTerminal() && node.untried.length) {
+      const idx = Math.floor(Math.random()*node.untried.length);
+      const move = node.untried.splice(idx,1)[0];
+      const childBoard = node.board.clone();
+      const opp = node.color===BLACK ? WHITE : BLACK;
+      if (move === null) childBoard.passMove();
+      else childBoard.applyMove(move[0], move[1], node.color);
+      const child = new MCTSNode(childBoard, opp, node, move);
+      node.children.push(child);
+      node = child;
+    }
+    // Rollout
+    const result = rollout(node.board.clone(), node.color, color);
+    // Backprop
+    let n = node;
+    while (n) {
+      n.visits++;
+      n.wins += n.color !== color ? result : 1-result;
+      n = n.parent;
+    }
+  }
+  if (!root.children.length) return null;
+  const best = root.children.reduce((a,b) => b.visits>a.visits?b:a);
+  return best.move;
+}
+
+function rollout(board, color, aiColor) {
+  const MAX = SIZE*SIZE*3;
+  for (let i=0; i<MAX; i++) {
+    if (board.isGameOver()) break;
+    const moves = board.legalMoves(color);
+    if (moves.length) {
+      const [r,c] = moves[Math.floor(Math.random()*moves.length)];
+      board.applyMove(r,c,color);
+    } else { board.passMove(); }
+    color = color===BLACK ? WHITE : BLACK;
+  }
+  const [bs, ws] = board.score();
+  return (aiColor===BLACK && bs>ws)||(aiColor===WHITE && ws>bs) ? 1.0 : 0.0;
+}
+
+// ══════════════════════════════════════════════════════
+//  Renderer
+// ══════════════════════════════════════════════════════
+
+const canvas = document.getElementById('board');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+function getLayout() {
+  const MARGIN = SIZE === 19 ? 36 : 40;
+  const CELL   = (W - 2*MARGIN) / (SIZE - 1);
+  return {MARGIN, CELL};
+}
+
+function hoshiPoints() {
+  if (SIZE === 19) {
+    const pts = [3,9,15]; return pts.flatMap(r => pts.map(c => [r,c]));
+  } else if (SIZE === 13) {
+    const e=3, m=6;
+    return [[e,e],[e,m],[e,12-e],[m,e],[m,m],[m,12-e],[12-e,e],[12-e,m],[12-e,12-e]];
+  } else {
+    const e=2, m=Math.floor(SIZE/2);
+    return [[e,e],[e,SIZE-1-e],[SIZE-1-e,e],[SIZE-1-e,SIZE-1-e],[m,m]];
+  }
+}
+
+function bxy(r, c) {
+  const {MARGIN,CELL} = getLayout();
+  return [MARGIN+c*CELL, MARGIN+r*CELL];
+}
+function xyb(px, py) {
+  const {MARGIN,CELL} = getLayout();
+  return [Math.round((py-MARGIN)/CELL), Math.round((px-MARGIN)/CELL)];
+}
+
+function drawBoard(state) {
+  const {MARGIN, CELL} = getLayout();
+  const stoneR = Math.max(8, CELL/2 - 2);
+
+  // Wood background
+  const grad = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,W*.6);
+  grad.addColorStop(0, '#d4af72');
+  grad.addColorStop(1, '#b8943a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  // Grid lines
+  ctx.strokeStyle = '#5c3d11';
+  ctx.lineWidth = 1;
+  for (let i=0; i<SIZE; i++) {
+    const [x0,y0] = bxy(i,0), [x1,] = bxy(i,SIZE-1);
+    const [,ya] = bxy(0,i),   [,yb] = bxy(SIZE-1,i);
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0,ya); ctx.lineTo(x0,yb); ctx.stroke();
+  }
+
+  // Labels
+  const fontSize = SIZE >= 19 ? 9 : 11;
+  ctx.fillStyle = '#5c3d11';
+  ctx.font = `${fontSize}px "IBM Plex Mono", monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i=0; i<SIZE; i++) {
+    const [x,] = bxy(0,i); ctx.fillText(COL_LABELS[i], x, MARGIN-16);
+    const [,y] = bxy(i,0); ctx.fillText(SIZE-i, MARGIN-16, y);
+  }
+
+  // Hoshi
+  for (const [r,c] of hoshiPoints()) {
+    const [x,y] = bxy(r,c);
+    ctx.fillStyle = '#5c3d11';
+    ctx.beginPath(); ctx.arc(x,y, SIZE>=19?3:4, 0,Math.PI*2); ctx.fill();
+  }
+
+  // Stones
+  for (let r=0; r<SIZE; r++) {
+    for (let c=0; c<SIZE; c++) {
+      const v = state.board[r][c];
+      if (!v) continue;
+      const [x,y] = bxy(r,c);
+      const rad = stoneR;
+      const sg = ctx.createRadialGradient(x-rad*.25, y-rad*.25, rad*.1, x, y, rad);
+      if (v===BLACK) {
+        sg.addColorStop(0,'#666'); sg.addColorStop(1,'#111');
+        ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=8;
+      } else {
+        sg.addColorStop(0,'#fff'); sg.addColorStop(1,'#ccc');
+        ctx.shadowColor='rgba(0,0,0,.3)'; ctx.shadowBlur=6;
+      }
+      ctx.fillStyle = sg;
+      ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle = v===BLACK ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.2)';
+      ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+
+  // Last move marker
+  if (state.moveHistory.length) {
+    const last = state.moveHistory[state.moveHistory.length-1];
+    if (last) {
+      const [r,c]=last, [x,y]=bxy(r,c);
+      ctx.fillStyle = state.board[r][c]===BLACK ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.5)';
+      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Hover hint
+  if (hoverCell && currentColor===BLACK && !aiThinking && !state.isGameOver()) {
+    const [hr,hc] = hoverCell;
+    if (state.isValidMove(hr,hc,BLACK)) {
+      const [hx,hy] = bxy(hr,hc);
+      ctx.fillStyle = 'rgba(20,20,20,.35)';
+      ctx.beginPath(); ctx.arc(hx,hy,stoneR,0,Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  Game State
+// ══════════════════════════════════════════════════════
+
+let gameBoard, currentColor, aiThinking, hoverCell, moveLog;
+
+function setSize(n) {
+  SIZE = n;
+  document.querySelectorAll('.size-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.size) === n)
+  );
+  document.querySelector('h1').textContent = `囲碁 · Go`;
+  document.querySelector('.subtitle').textContent = `${n}×${n} · MCTS AI · CUDA Ready`;
+  newGame();
+}
+
+function newGame() {
+  gameBoard = new GoBoard();
+  currentColor = BLACK;
+  aiThinking = false;
+  hoverCell = null;
+  moveLog = [];
+  document.getElementById('result-overlay').classList.remove('show');
+  document.getElementById('btn-pass').disabled = false;
+  document.getElementById('btn-resign').disabled = false;
+  setStatus("Your turn  ●  Black");
+  updateScoreUI();
+  drawBoard(gameBoard);
+}
+
+function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
+
+function updateScoreUI() {
+  const [bs, ws] = gameBoard.score();
+  document.getElementById('score-black').textContent = bs.toFixed(0);
+  document.getElementById('score-white').textContent = ws.toFixed(1);
+  const bpct = Math.round(100 * bs / (bs+ws));
+  document.getElementById('prob-bar').style.setProperty('--bpct', bpct+'%');
+  document.getElementById('black-prob').textContent = bpct+'%';
+  document.getElementById('white-prob').textContent = (100-bpct)+'%';
+}
+
+function updateMoveList() {
+  const el = document.getElementById('move-list');
+  el.textContent = moveLog.slice(-30).join('\n') || '—';
+  el.scrollTop = el.scrollHeight;
+}
+
+function checkGameOver() {
+  if (!gameBoard.isGameOver()) return false;
+  const [bs, ws] = gameBoard.score();
+  const winner = bs>ws ? 'Black wins!' : 'White wins!';
+  document.getElementById('result-msg').textContent = winner;
+  document.getElementById('result-score').textContent =
+    `Black ${bs.toFixed(0)}  ·  White ${ws.toFixed(1)}`;
+  document.getElementById('result-overlay').classList.add('show');
+  document.getElementById('btn-pass').disabled = true;
+  document.getElementById('btn-resign').disabled = true;
+  return true;
+}
+
+function getSims() { return parseInt(document.getElementById('sims-slider').value); }
+
+// ── Human move ─────────────────────────────────────────
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX-rect.left) * (W/rect.width);
+  const py = (e.clientY-rect.top)  * (H/rect.height);
+  const [r,c] = xyb(px,py);
+  hoverCell = (r>=0&&r<SIZE&&c>=0&&c<SIZE) ? [r,c] : null;
+  drawBoard(gameBoard);
+});
+
+canvas.addEventListener('mouseleave', () => { hoverCell=null; drawBoard(gameBoard); });
+
+canvas.addEventListener('click', e => {
+  if (currentColor!==BLACK || aiThinking || gameBoard.isGameOver()) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX-rect.left) * (W/rect.width);
+  const py = (e.clientY-rect.top)  * (H/rect.height);
+  const [r,c] = xyb(px,py);
+  if (r<0||r>=SIZE||c<0||c>=SIZE) return;
+  if (!gameBoard.isValidMove(r,c,BLACK)) return;
+
+  gameBoard.applyMove(r,c,BLACK);
+  moveLog.push(`${moveLog.length+1}. ● ${COL_LABELS[c]}${SIZE-r}`);
+  updateMoveList();
+  updateScoreUI();
+  drawBoard(gameBoard);
+  if (checkGameOver()) return;
+  triggerAI();
+});
+
+function humanPass() {
+  if (currentColor!==BLACK || aiThinking || gameBoard.isGameOver()) return;
+  gameBoard.passMove();
+  moveLog.push(`${moveLog.length+1}. ● pass`);
+  updateMoveList();
+  if (checkGameOver()) return;
+  triggerAI();
+}
+
+function resign() {
+  if (gameBoard.isGameOver()) return;
+  document.getElementById('result-msg').textContent = 'White wins!';
+  document.getElementById('result-score').textContent = 'Black resigned';
+  document.getElementById('result-overlay').classList.add('show');
+}
+
+// ── AI move ────────────────────────────────────────────
+
+function triggerAI() {
+  currentColor = WHITE;
+  aiThinking = true;
+  document.getElementById('spinner').classList.add('show');
+  setStatus('AI thinking…');
+  setTimeout(() => {
+    const move = mcts(gameBoard, WHITE, getSims());
+    if (move===null) {
+      gameBoard.passMove();
+      moveLog.push(`${moveLog.length+1}. ○ pass`);
+    } else {
+      const [r,c] = move;
+      gameBoard.applyMove(r,c,WHITE);
+      moveLog.push(`${moveLog.length+1}. ○ ${COL_LABELS[c]}${SIZE-r}`);
+    }
+    updateMoveList();
+    updateScoreUI();
+    drawBoard(gameBoard);
+    aiThinking = false;
+    document.getElementById('spinner').classList.remove('show');
+    currentColor = BLACK;
+    if (!checkGameOver()) setStatus('Your turn  ●  Black');
+  }, 10); // yield to let browser paint spinner first
+}
+
+// ── Slider ─────────────────────────────────────────────
+document.getElementById('sims-slider').addEventListener('input', function() {
+  document.getElementById('sims-val').textContent = this.value;
+});
+
+// ── Start ──────────────────────────────────────────────
+newGame();
+
+// ══════════════════════════════════════════════════════
+//  Dev Panel
+// ══════════════════════════════════════════════════════
+
+function devLog(msg, type='info') {
+  const el = document.getElementById('dev-log');
+  if (!el) return;
+  const ts = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const line = document.createElement('div');
+  line.className = `log-${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('dev-log').innerHTML = ''; }
+
+const _origLog = console.log.bind(console);
+console.log = (...a) => { _origLog(...a); devLog(a.join(' '),'info'); };
+const _origWarn = console.warn.bind(console);
+console.warn = (...a) => { _origWarn(...a); devLog(a.join(' '),'warn'); };
+const _origErr = console.error.bind(console);
+console.error = (...a) => { _origErr(...a); devLog(a.join(' '),'error'); };
+
+function toggleDev() {
+  const body = document.getElementById('dev-body');
+  body.classList.toggle('open');
+  document.getElementById('dev-toggle').textContent =
+    body.classList.contains('open') ? '✕ Close Dev Panel' : '⚙ Dev Panel';
+}
+
+function switchTab(name) {
+  const tabs = ['cuda','bench','mcts','log'];
+  document.querySelectorAll('.dev-tab').forEach((t,i) => t.classList.toggle('active', tabs[i]===name));
+  document.querySelectorAll('.dev-section').forEach(s => s.classList.toggle('active', s.id==='tab-'+name));
+}
+
+function setStat(id, val, cls='') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = val;
+  el.className = 'stat-val'+(cls?' '+cls:'');
+}
+
+function runDiagnostics() {
+  devLog('Running diagnostics…','dim');
+  let gpuName='unavailable', wglVer='unavailable';
+  try {
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl2') || cv.getContext('webgl');
+    if (gl) {
+      wglVer = gl instanceof WebGL2RenderingContext ? 'WebGL 2' : 'WebGL 1';
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      gpuName = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    }
+  } catch(e) { gpuName = 'error: '+e.message; }
+  const cores = navigator.hardwareConcurrency || '?';
+  const memGB = navigator.deviceMemory ? navigator.deviceMemory+' GB' : 'unavailable';
+  const cudaLikely = /nvidia|geforce|rtx|gtx|quadro|tesla/i.test(gpuName);
+  setStat('di-cuda', cudaLikely ? '⚠ Likely NVIDIA — run --cuda-test to confirm' : 'Unknown (JS has no CUDA access)', cudaLikely?'warn':'');
+  setStat('di-gpu',     gpuName,  cudaLikely?'good':'');
+  setStat('di-wgl',     wglVer,   wglVer!=='unavailable'?'good':'');
+  setStat('di-cores',   cores+' threads');
+  setStat('di-mem',     memGB);
+  setStat('di-backend', 'JavaScript (browser) — no native CUDA','warn');
+  devLog(`GPU: ${gpuName} | WebGL: ${wglVer} | Cores: ${cores}`, cudaLikely?'ok':'info');
+}
+
+function testRolloutSpeed() {
+  devLog('Testing rollout speed (100 rollouts)…','dim');
+  const b = new GoBoard();
+  [[2,2],[3,3],[5,5],[4,6]].forEach(([r,c],i) => b.applyMove(r,c,i%2===0?BLACK:WHITE));
+  const N=100, t0=performance.now();
+  for (let i=0;i<N;i++) rollout(b.clone(),BLACK,WHITE);
+  const rate = Math.round(N/((performance.now()-t0)/1000));
+  devLog(`${N} rollouts → ${rate}/sec`,'ok');
+  setStat('di-backend',`JS @ ~${rate} rollouts/sec`,'good');
+}
+
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+
+async function runBenchmark() {
+  const btn = document.getElementById('bench-btn');
+  btn.disabled=true; btn.textContent='⏳ Running…';
+  document.getElementById('bench-status').textContent='Running…';
+  await sleep(20);
+  const b = new GoBoard();
+  [[2,2],[3,3],[5,5],[1,7],[7,1]].forEach(([r,c],i)=>b.applyMove(r,c,i%2===0?BLACK:WHITE));
+
+  let N=0, t=performance.now();
+  while(performance.now()-t<500){b.legalMoves(BLACK);N++;}
+  const movegenRate=Math.round(N/0.5); await sleep(10);
+
+  N=0; t=performance.now();
+  while(performance.now()-t<500){b.score();N++;}
+  const scoreRate=Math.round(N/0.5); await sleep(10);
+
+  N=0; t=performance.now();
+  while(performance.now()-t<1000){rollout(b.clone(),BLACK,WHITE);N++;}
+  const rolloutRate=Math.round(N); await sleep(10);
+
+  t=performance.now();
+  mcts(b,WHITE,50);
+  const simsRate=Math.round(50/((performance.now()-t)/1000));
+
+  function setB(vid,val,bid,max){
+    document.getElementById(vid).textContent=val>=1000?(val/1000).toFixed(1)+'k':val;
+    document.getElementById(bid).style.width=Math.min(100,Math.round(val/max*100))+'%';
+  }
+  setB('bench-sims',simsRate,'bench-bar-sims',500);
+  setB('bench-rollout',rolloutRate,'bench-bar-rollout',300);
+  setB('bench-movegen',movegenRate,'bench-bar-movegen',50000);
+  setB('bench-score',scoreRate,'bench-bar-score',100000);
+  const summary=`Sims: ${simsRate}/s | Rollouts: ${rolloutRate}/s | MoveGen: ${movegenRate}/s`;
+  document.getElementById('bench-status').textContent='✓ '+summary;
+  devLog('Benchmark: '+summary,'ok');
+  btn.disabled=false; btn.textContent='↺ Re-run Benchmark';
+}
+
+// ── MCTS instrumented version ─────────────────────────────
+let lastMctsStats = null;
+
+function mctsInstrumented(board, color, simulations) {
+  const t0=performance.now();
+  const root=new MCTSNode(board.clone(),color);
+  let totalDepth=0,depthSamples=0;
+  for(let i=0;i<simulations;i++){
+    let node=root;
+    while(!node.isTerminal()&&node.isFullyExpanded()) node=node.bestChild();
+    if(!node.isTerminal()&&node.untried.length){
+      const idx=Math.floor(Math.random()*node.untried.length);
+      const move=node.untried.splice(idx,1)[0];
+      const cb=node.board.clone();
+      const opp=node.color===BLACK?WHITE:BLACK;
+      if(move===null) cb.passMove(); else cb.applyMove(move[0],move[1],node.color);
+      const child=new MCTSNode(cb,opp,node,move);
+      node.children.push(child); node=child;
+    }
+    let depth=0,rb=node.board.clone(),rc=node.color;
+    const MAX=SIZE*SIZE*3;
+    for(let d=0;d<MAX;d++){
+      if(rb.isGameOver()){depth=d;break;}
+      const mv=rb.legalMoves(rc);
+      if(mv.length){const[r,c]=mv[Math.floor(Math.random()*mv.length)];rb.applyMove(r,c,rc);}
+      else rb.passMove();
+      rc=rc===BLACK?WHITE:BLACK;
+      if(d===MAX-1)depth=d;
+    }
+    totalDepth+=depth;depthSamples++;
+    const[bs2,ws2]=rb.score();
+    const res=(color===BLACK&&bs2>ws2)||(color===WHITE&&ws2>bs2)?1.0:0.0;
+    let n=node;
+    while(n){n.visits++;n.wins+=n.color!==color?res:1-res;n=n.parent;}
+  }
+  const elapsed=(performance.now()-t0)/1000;
+  if(!root.children.length)return null;
+  const best=root.children.reduce((a,b)=>b.visits>a.visits?b:a);
+  lastMctsStats={sims:simulations,time:elapsed,rate:Math.round(simulations/elapsed),
+    winPct:Math.round(best.wins/best.visits*100),visits:best.visits,
+    nodes:root.children.length,avgDepth:Math.round(totalDepth/Math.max(1,depthSamples))};
+  return best.move;
+}
+
+function updateMctsPanel(){
+  if(!lastMctsStats)return;
+  const s=lastMctsStats;
+  setStat('ms-sims',  s.sims);
+  setStat('ms-time',  s.time.toFixed(2)+'s');
+  setStat('ms-rate',  s.rate+'/s', s.rate>200?'good':s.rate>80?'warn':'');
+  setStat('ms-winpct',s.winPct+'%',s.winPct>60?'good':s.winPct<40?'warn':'');
+  setStat('ms-visits',s.visits);
+  setStat('ms-nodes', s.nodes);
+  setStat('ms-depth', s.avgDepth+' moves');
+}
+
+// Override triggerAI to use instrumented MCTS
+function triggerAI(){
+  currentColor=WHITE; aiThinking=true;
+  document.getElementById('spinner').classList.add('show');
+  setStatus('AI thinking…');
+  setTimeout(()=>{
+    const move=mctsInstrumented(gameBoard,WHITE,getSims());
+    if(move===null){gameBoard.passMove();moveLog.push(`${moveLog.length+1}. ○ pass`);}
+    else{
+      const[r,c]=move;gameBoard.applyMove(r,c,WHITE);
+      moveLog.push(`${moveLog.length+1}. ○ ${COL_LABELS[c]}${SIZE-r}`);
+    }
+    updateMoveList();updateScoreUI();drawBoard(gameBoard);updateMctsPanel();
+    if(lastMctsStats)
+      devLog(`AI: ${lastMctsStats.sims} sims · ${lastMctsStats.time.toFixed(2)}s · ${lastMctsStats.rate}/s · win ${lastMctsStats.winPct}%`,'ok');
+    aiThinking=false;
+    document.getElementById('spinner').classList.remove('show');
+    currentColor=BLACK;
+    if(!checkGameOver())setStatus('Your turn  ●  Black');
+  },10);
+}
+
+runDiagnostics();
+devLog('Go engine ready — board '+SIZE+'×'+SIZE,'ok');
+</script>
+</body>
+</html>
