@@ -536,7 +536,7 @@
 let SIZE   = 9;
 const EMPTY  = 0, BLACK = 1, WHITE = 2;
 const KOMI   = 6.5;
-const COL_LABELS = "ABCDEFGHJ";
+const COL_LABELS = "ABCDEFGHJKLMNOPQRST"; // 19 cols, no I (Go convention)
 
 // ── Board ─────────────────────────────────────────────
 
@@ -763,12 +763,21 @@ function rollout(board, color, aiColor) {
 
 const canvas = document.getElementById('board');
 const ctx    = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+
+// Board pixel size per board dimension
+const BOARD_PX = { 9: 460, 13: 520, 19: 600 };
+
+function resizeCanvas() {
+  const px = BOARD_PX[SIZE] || 460;
+  canvas.width  = px;
+  canvas.height = px;
+}
 
 function getLayout() {
-  const MARGIN = SIZE === 19 ? 36 : 40;
+  const W      = canvas.width;
+  const MARGIN = SIZE === 19 ? 38 : 40;
   const CELL   = (W - 2*MARGIN) / (SIZE - 1);
-  return {MARGIN, CELL};
+  return {MARGIN, CELL, W};
 }
 
 function hoshiPoints() {
@@ -793,7 +802,8 @@ function xyb(px, py) {
 }
 
 function drawBoard(state) {
-  const {MARGIN, CELL} = getLayout();
+  const {MARGIN, CELL, W} = getLayout();
+  const H = canvas.height;
   const stoneR = Math.max(8, CELL/2 - 2);
 
   // Wood background
@@ -882,10 +892,10 @@ let gameBoard, currentColor, aiThinking, hoverCell, moveLog;
 
 function setSize(n) {
   SIZE = n;
+  resizeCanvas();
   document.querySelectorAll('.size-btn').forEach(b =>
     b.classList.toggle('active', parseInt(b.dataset.size) === n)
   );
-  document.querySelector('h1').textContent = `囲碁 · Go`;
   document.querySelector('.subtitle').textContent = `${n}×${n} · MCTS AI · CUDA Ready`;
   newGame();
 }
@@ -941,8 +951,8 @@ function getSims() { return parseInt(document.getElementById('sims-slider').valu
 
 canvas.addEventListener('mousemove', e => {
   const rect = canvas.getBoundingClientRect();
-  const px = (e.clientX-rect.left) * (W/rect.width);
-  const py = (e.clientY-rect.top)  * (H/rect.height);
+  const px = (e.clientX-rect.left) * (canvas.width/rect.width);
+  const py = (e.clientY-rect.top)  * (canvas.height/rect.height);
   const [r,c] = xyb(px,py);
   hoverCell = (r>=0&&r<SIZE&&c>=0&&c<SIZE) ? [r,c] : null;
   drawBoard(gameBoard);
@@ -953,8 +963,8 @@ canvas.addEventListener('mouseleave', () => { hoverCell=null; drawBoard(gameBoar
 canvas.addEventListener('click', e => {
   if (currentColor!==BLACK || aiThinking || gameBoard.isGameOver()) return;
   const rect = canvas.getBoundingClientRect();
-  const px = (e.clientX-rect.left) * (W/rect.width);
-  const py = (e.clientY-rect.top)  * (H/rect.height);
+  const px = (e.clientX-rect.left) * (canvas.width/rect.width);
+  const py = (e.clientY-rect.top)  * (canvas.height/rect.height);
   const [r,c] = xyb(px,py);
   if (r<0||r>=SIZE||c<0||c>=SIZE) return;
   if (!gameBoard.isValidMove(r,c,BLACK)) return;
@@ -1017,6 +1027,7 @@ document.getElementById('sims-slider').addEventListener('input', function() {
 });
 
 // ── Start ──────────────────────────────────────────────
+resizeCanvas();
 newGame();
 
 // ══════════════════════════════════════════════════════
