@@ -60,4 +60,4 @@ A Python implementation of the classic board game Go, featuring an AI opponent w
 
 ## License
 
-This project is open-source. [Specify your chosen license here, e.g., MIT, GPL, etc., or remove this section if no formal license is applied yet].
+This project is open-source.
