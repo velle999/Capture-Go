@@ -4,6 +4,17 @@ import random
 import math
 from collections import defaultdict
 
+# --- New: Difficulty Settings ---
+DIFFICULTY_SETTINGS = {
+    'easy': {'iterations': 50},
+    'medium': {'iterations': 200}, # Original value
+    'hard': {'iterations': 1000},
+    'very_hard': {'iterations': 5000} # For comparison, will be slow
+}
+
+CURRENT_DIFFICULTY = 'medium' # Set initial difficulty
+# --- End of Difficulty Settings ---
+
 # Constants
 BOARD_SIZE = 9
 GRID_SIZE = 50
@@ -109,7 +120,7 @@ class MCTSNode:
             return float('inf')
         return self.wins / self.visits + exploration * math.sqrt(math.log(self.parent.visits) / self.visits)
 
-def mcts(root_state, iterations=1000):
+def mcts(root_state, iterations=1000): # Accept iterations as argument
     root = MCTSNode(root_state)
     
     for _ in range(iterations):
@@ -163,6 +174,7 @@ class GoGame:
         self.game_over = False
         self.winner = None # None, 0 (Black/Human), 1 (White/AI)
         self.captured_stones = {0: 0, 1: 0} # Track captures
+        self.difficulty = CURRENT_DIFFICULTY # Store current difficulty
         
     def place_stone(self, x, y):
         if self.board[x][y] != -1 or self.ai_thinking or self.game_over:
@@ -225,7 +237,9 @@ class GoGame:
         if self.ai_thinking and not self.game_over:
             # Create state for AI considering captures
             state = GoState(self.board, 1, self.captured_stones)
-            best_move = mcts(state, iterations=200)  # Reduced for faster response
+            # Get iterations from settings based on current difficulty
+            iterations = DIFFICULTY_SETTINGS[self.difficulty]['iterations']
+            best_move = mcts(state, iterations=iterations) # Pass the dynamic iterations value
             
             if best_move:
                 r, c = best_move
@@ -253,6 +267,12 @@ class GoGame:
                     
             self.ai_thinking = False
 
+    def change_difficulty(self, new_difficulty):
+        """Change the AI difficulty level."""
+        if new_difficulty in DIFFICULTY_SETTINGS:
+            self.difficulty = new_difficulty
+            print(f"Difficulty changed to {new_difficulty.capitalize()}")
+
 def draw_board(screen, game):
     screen.fill(BACKGROUND)
     
@@ -278,14 +298,16 @@ def draw_board(screen, game):
     font = pygame.font.SysFont(None, 24)
     black_text = font.render(f"Black Captures: {game.captured_stones[0]}", True, TEXT_COLOR)
     white_text = font.render(f"White Captures: {game.captured_stones[1]}", True, TEXT_COLOR)
+    difficulty_text = font.render(f"AI Difficulty: {game.difficulty.capitalize()}", True, TEXT_COLOR)
     screen.blit(black_text, (10, 10))
     screen.blit(white_text, (WINDOW_SIZE - white_text.get_width() - 10, 10))
+    screen.blit(difficulty_text, (WINDOW_SIZE//2 - difficulty_text.get_width()//2, 10)) # Centered at top
     
     # Draw thinking indicator
     if game.ai_thinking:
         font = pygame.font.SysFont(None, 36)
         text = font.render("AI is thinking...", True, TEXT_COLOR)
-        screen.blit(text, (WINDOW_SIZE//2 - text.get_width()//2, 10))
+        screen.blit(text, (WINDOW_SIZE//2 - text.get_width()//2, 40)) # Moved down slightly
     
     # Draw game over message
     if game.game_over:
@@ -300,7 +322,7 @@ def draw_board(screen, game):
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-    pygame.display.set_caption("Go Game - Human vs AI (with Win Detection)")
+    pygame.display.set_caption("Capture Go - Human vs AI (with Difficulty Levels)")
     clock = pygame.time.Clock()
     game = GoGame()
     
@@ -320,6 +342,17 @@ def main():
                 if 0 <= grid_x < BOARD_SIZE and 0 <= grid_y < BOARD_SIZE:
                     game.place_stone(grid_x, grid_y)
                     ai_timer = 0  # Reset timer after human move
+            # --- New: Handle Key Presses for Difficulty ---
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1:
+                    game.change_difficulty('easy')
+                elif event.key == pygame.K_2:
+                    game.change_difficulty('medium')
+                elif event.key == pygame.K_3:
+                    game.change_difficulty('hard')
+                elif event.key == pygame.K_4:
+                    game.change_difficulty('very_hard')
+            # --- End of Key Press Handling ---
         
         # Handle AI move after delay
         if game.ai_thinking and not game.game_over:
