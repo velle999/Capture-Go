@@ -541,8 +541,9 @@ const COL_LABELS = "ABCDEFGHJKLMNOPQRST"; // 19 cols, no I (Go convention)
 // ── Board ─────────────────────────────────────────────
 
 class GoBoard {
-  constructor() {
-    this.board = Array.from({length: SIZE}, () => new Int8Array(SIZE));
+  constructor(size) {
+    this.size = size || SIZE;
+    this.board = Array.from({length: this.size}, () => new Int8Array(this.size));
     this.koPoint = null;
     this.captured = {[BLACK]: 0, [WHITE]: 0};
     this.moveHistory = [];
@@ -550,25 +551,26 @@ class GoBoard {
   }
 
   neighbours(r, c) {
-    const res = [];
+    const res = [], S = this.size;
     for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
       const nr=r+dr, nc=c+dc;
-      if (nr>=0 && nr<SIZE && nc>=0 && nc<SIZE) res.push([nr,nc]);
+      if (nr>=0 && nr<S && nc>=0 && nc<S) res.push([nr,nc]);
     }
     return res;
   }
 
   getGroup(r, c) {
+    const S = this.size;
     const color = this.board[r][c];
     if (!color) return new Set();
     const group = new Set(), stack = [[r,c]];
     while (stack.length) {
       const [pr,pc] = stack.pop();
-      const key = pr*SIZE+pc;
+      const key = pr*S+pc;
       if (group.has(key)) continue;
       group.add(key);
       for (const [nr,nc] of this.neighbours(pr,pc)) {
-        if (this.board[nr][nc] === color && !group.has(nr*SIZE+nc))
+        if (this.board[nr][nc] === color && !group.has(nr*S+nc))
           stack.push([nr,nc]);
       }
     }
@@ -576,11 +578,11 @@ class GoBoard {
   }
 
   getLiberties(group) {
-    const libs = new Set();
+    const S = this.size, libs = new Set();
     for (const key of group) {
-      const r=Math.floor(key/SIZE), c=key%SIZE;
+      const r=Math.floor(key/S), c=key%S;
       for (const [nr,nc] of this.neighbours(r,c)) {
-        if (this.board[nr][nc] === EMPTY) libs.add(nr*SIZE+nc);
+        if (this.board[nr][nc] === EMPTY) libs.add(nr*S+nc);
       }
     }
     return libs;
@@ -596,7 +598,8 @@ class GoBoard {
       if (this.board[nr][nc] === opponent) {
         const grp = this.getGroup(nr,nc);
         if (!this.getLiberties(grp).size) {
-          for (const k of grp) captured.push([Math.floor(k/SIZE), k%SIZE]);
+          const S = this.size;
+          for (const k of grp) captured.push([Math.floor(k/S), k%S]);
         }
       }
     }
@@ -608,6 +611,7 @@ class GoBoard {
   }
 
   applyMove(r, c, color) {
+    const S = this.size;
     const opponent = color===BLACK ? WHITE : BLACK;
     this.board[r][c] = color;
     this.koPoint = null;
@@ -617,10 +621,10 @@ class GoBoard {
         const grp = this.getGroup(nr,nc);
         if (!this.getLiberties(grp).size) {
           nCap += grp.size;
-          for (const k of grp) this.board[Math.floor(k/SIZE)][k%SIZE] = EMPTY;
+          for (const k of grp) this.board[Math.floor(k/S)][k%S] = EMPTY;
           if (grp.size === 1 && nCap === 1) {
             const [pk] = grp;
-            const pr=Math.floor(pk/SIZE), pc=pk%SIZE;
+            const pr=Math.floor(pk/S), pc=pk%S;
             if (this.getLiberties(this.getGroup(r,c)).size === 1)
               this.koPoint = [pr,pc];
           }
@@ -640,17 +644,18 @@ class GoBoard {
 
   legalMoves(color) {
     const moves = [];
-    for (let r=0; r<SIZE; r++)
-      for (let c=0; c<SIZE; c++)
+    for (let r=0; r<this.size; r++)
+      for (let c=0; c<this.size; c++)
         if (this.isValidMove(r,c,color)) moves.push([r,c]);
     return moves;
   }
 
   score() {
-    const visited = Array.from({length:SIZE}, () => new Uint8Array(SIZE));
+    const S = this.size;
+    const visited = Array.from({length:S}, () => new Uint8Array(S));
     let bs=0, ws=0;
-    for (let r=0; r<SIZE; r++) {
-      for (let c=0; c<SIZE; c++) {
+    for (let r=0; r<S; r++) {
+      for (let c=0; c<S; c++) {
         if (visited[r][c]) continue;
         if (this.board[r][c] !== EMPTY) { visited[r][c]=1; continue; }
         const region=[], borders=new Set(), stack=[[r,c]];
@@ -669,8 +674,8 @@ class GoBoard {
         }
       }
     }
-    for (let r=0; r<SIZE; r++)
-      for (let c=0; c<SIZE; c++) {
+    for (let r=0; r<S; r++)
+      for (let c=0; c<S; c++) {
         if (this.board[r][c]===BLACK) bs++;
         else if (this.board[r][c]===WHITE) ws++;
       }
@@ -680,7 +685,7 @@ class GoBoard {
   isGameOver() { return this.consecutivePasses >= 2; }
 
   clone() {
-    const b = new GoBoard();
+    const b = new GoBoard(this.size);
     b.board = this.board.map(row => new Int8Array(row));
     b.koPoint = this.koPoint ? [...this.koPoint] : null;
     b.captured = {...this.captured};
@@ -743,7 +748,7 @@ function mcts(board, color, simulations) {
 }
 
 function rollout(board, color, aiColor) {
-  const MAX = SIZE*SIZE*3;
+  const MAX = board.size*board.size*3;
   for (let i=0; i<MAX; i++) {
     if (board.isGameOver()) break;
     const moves = board.legalMoves(color);
@@ -901,7 +906,7 @@ function setSize(n) {
 }
 
 function newGame() {
-  gameBoard = new GoBoard();
+  gameBoard = new GoBoard(SIZE);
   currentColor = BLACK;
   aiThinking = false;
   hoverCell = null;
@@ -1099,7 +1104,7 @@ function runDiagnostics() {
 
 function testRolloutSpeed() {
   devLog('Testing rollout speed (100 rollouts)…','dim');
-  const b = new GoBoard();
+  const b = new GoBoard(SIZE);
   [[2,2],[3,3],[5,5],[4,6]].forEach(([r,c],i) => b.applyMove(r,c,i%2===0?BLACK:WHITE));
   const N=100, t0=performance.now();
   for (let i=0;i<N;i++) rollout(b.clone(),BLACK,WHITE);
@@ -1115,7 +1120,7 @@ async function runBenchmark() {
   btn.disabled=true; btn.textContent='⏳ Running…';
   document.getElementById('bench-status').textContent='Running…';
   await sleep(20);
-  const b = new GoBoard();
+  const b = new GoBoard(SIZE);
   [[2,2],[3,3],[5,5],[1,7],[7,1]].forEach(([r,c],i)=>b.applyMove(r,c,i%2===0?BLACK:WHITE));
 
   let N=0, t=performance.now();
@@ -1168,7 +1173,7 @@ function mctsInstrumented(board, color, simulations) {
       node.children.push(child); node=child;
     }
     let depth=0,rb=node.board.clone(),rc=node.color;
-    const MAX=SIZE*SIZE*3;
+    const MAX=rb.size*rb.size*3;
     for(let d=0;d<MAX;d++){
       if(rb.isGameOver()){depth=d;break;}
       const mv=rb.legalMoves(rc);
