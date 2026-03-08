@@ -682,7 +682,12 @@ class GoBoard {
     return [bs, ws+KOMI];
   }
 
-  isGameOver() { return this.consecutivePasses >= 2; }
+  isGameOver() {
+    if (this.consecutivePasses >= 2) return true;
+    // Also end if neither side has any legal moves (both stuck with only suicide/ko)
+    if (this.legalMoves(BLACK).length === 0 && this.legalMoves(WHITE).length === 0) return true;
+    return false;
+  }
 
   clone() {
     const b = new GoBoard(this.size);
@@ -755,7 +760,10 @@ function rollout(board, color, aiColor) {
     if (moves.length) {
       const [r,c] = moves[Math.floor(Math.random()*moves.length)];
       board.applyMove(r,c,color);
-    } else { board.passMove(); }
+    } else {
+      // No legal moves — forced pass (don't reset consecutivePasses via applyMove)
+      board.passMove();
+    }
     color = color===BLACK ? WHITE : BLACK;
   }
   const [bs, ws] = board.score();
@@ -1178,7 +1186,7 @@ function mctsInstrumented(board, color, simulations) {
       if(rb.isGameOver()){depth=d;break;}
       const mv=rb.legalMoves(rc);
       if(mv.length){const[r,c]=mv[Math.floor(Math.random()*mv.length)];rb.applyMove(r,c,rc);}
-      else rb.passMove();
+      else{rb.passMove();} // forced pass — correctly increments consecutivePasses
       rc=rc===BLACK?WHITE:BLACK;
       if(d===MAX-1)depth=d;
     }
